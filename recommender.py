@@ -28,14 +28,8 @@ def square_rooted(x):
 
 def cosine_similarity(x,y):
     
-    input1 = {}
-    input2 = {}
-    vector2 = []
-    vector1 =[]
-
     input1 = x
     input2 = y
-
     vector1 = list(input1.values())
     vector2 = list(input2.values())
    
@@ -55,7 +49,9 @@ def get_eligible_songs(user_top_genres, sp, song_id_list):
         query = "genre:"+ "\"" + item + "\"" 
         genre_search_result = sp.search(q=query, limit = SONGS_PER_GENRE, type = "track")
         for idx, item in enumerate(genre_search_result['tracks']['items']):
-            if item['popularity'] < POPULARITY_THRESHOLD and item['id'] not in song_id_list:
+            # Only selecting songs that are below (or equal to) the popularity threshold
+            # And discarding songs from the search space that are already present in user's top tracks
+            if item['popularity'] <= POPULARITY_THRESHOLD and item['id'] not in song_id_list:
                 song_dict = {}
                 song_dict['id'] = item['id']
                 song_dict['name'] = item['name']
@@ -67,23 +63,26 @@ def get_eligible_songs(user_top_genres, sp, song_id_list):
 
 def extract_song_ids(tracks_list):
     song_id_list = []
-    song_name_list = []
     for idx, item in enumerate(tracks_list['items']):
         song_id_list.append(item['id'])
-        song_name_list.append(item['name'])
     return song_id_list
 
-def main():   
+def get_spotify_client():
     sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=os.environ['SPOTIFY_CLIENT_ID'],
                                                             client_secret=os.environ['SPOTIFY_CLIENT_SECRET'],
                                                             redirect_uri="http://example.com",
                                                             scope="user-top-read"))
-    
+    return sp                                                       
+
+
+def main():   
+    sp = get_spotify_client()
+    # Getting user's top tracks and audio features based on those tracks
     user_top_tracks = sp.current_user_top_tracks(limit=TOP_TRACKS_TO_CONSIDER_COUNT, time_range=TIME_RANGE)
-    song_id_list = extract_song_ids(user_top_tracks)
-    user_audio_features = sp.audio_features(tracks = song_id_list)
-    user_avg_audio_features = dictionary_average(user_audio_features)
+    user_top_tracks_ids = extract_song_ids(user_top_tracks)
+    user_avg_audio_features = dictionary_average(sp.audio_features(tracks = user_top_tracks_ids))
     
+    # Getting user's top artists to get a list of genres that the user prefers
     user_top_artists = sp.current_user_top_artists(limit=TOP_ARTISTS_TO_CONSIDER_COUNT, time_range='long_term')
     user_top_genres = set()
     for idx, artist in enumerate(user_top_artists['items']):
@@ -96,8 +95,8 @@ def main():
     We will then recommend songs from this list that have a high audio features similarity with user's preferred audio features
     """     
 
-    # Reducing search space by filtering based on user's top genres
-    eligible_songs = get_eligible_songs(user_top_genres, sp, song_id_list)
+    # Creating a search space of eligible songs based on user's preferred genres
+    eligible_songs = get_eligible_songs(user_top_genres, sp, user_top_tracks_ids)
     eligible_songs_ids = []
     for idx, item in enumerate(eligible_songs):
         eligible_songs_ids.append(item['id'])
@@ -110,13 +109,12 @@ def main():
     # So creating chunks from the parent list and passing iteratively
 
     eligible_song_ids_chunks = chunks(eligible_songs_ids, 100)
-    for song_id_list in eligible_song_ids_chunks:
-        search_space_audio_features = sp.audio_features(tracks = song_id_list)    
+    for user_top_tracks_ids in eligible_song_ids_chunks:
+        search_space_audio_features = sp.audio_features(tracks = user_top_tracks_ids)    
     # Filtering search space to have only desired audio features
     filtered_search_space = []
     for idx, item in enumerate(search_space_audio_features):
-        dictionary = item
-        filtered_dict = { key: dictionary[key] for key in DESIRED_AUDIO_FEATURES }
+        filtered_dict = { key: item[key] for key in DESIRED_AUDIO_FEATURES }
         filtered_search_space.append(filtered_dict)
     
     max_similarity = -1
