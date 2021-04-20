@@ -2,6 +2,7 @@ import spotipy
 import os
 from spotipy.oauth2 import SpotifyOAuth
 from math import sqrt
+from email_service import send_email
 
 DESIRED_AUDIO_FEATURES = ['danceability', 'energy', 'loudness', 'speechiness', 'acousticness', 'instrumentalness', 'liveness',
                           'valence', 'tempo']
@@ -126,8 +127,8 @@ def main():
             max_song_index = idx
     for idx, item in enumerate(eligible_songs):
         if item['id'] == eligible_songs_ids[max_song_index]:
-            print("RECOMMENDED SONG: ", item['name'], " - ", item['artist'])
-            print("\nLink: ", item['spotify_url'])
+            message = 'Song of the day: {song_name}\nLink: {song_link}'.format(song_name=item['name'], song_link=item['spotify_url'])
+            send_email(message)
             break
 
 if __name__ == "__main__":
