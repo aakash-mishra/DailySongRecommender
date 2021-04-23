@@ -2,7 +2,8 @@ import spotipy
 import os
 from spotipy.oauth2 import SpotifyOAuth
 from math import sqrt
-from email_service import send_email
+from .email_service import send_email
+from django.conf import settings
 
 DESIRED_AUDIO_FEATURES = ['danceability', 'energy', 'loudness', 'speechiness', 'acousticness', 'instrumentalness', 'liveness',
                           'valence', 'tempo']
@@ -11,7 +12,7 @@ SONGS_PER_GENRE = 50
 #Max - 50
 TOP_TRACKS_TO_CONSIDER_COUNT = 50
 #Options - short_term, medium_term, long_term
-TIME_RANGE = 'short_term'
+TIME_RANGE = 'long_term'
 #Max - 50
 TOP_ARTISTS_TO_CONSIDER_COUNT = 50
 POPULARITY_THRESHOLD = 60
@@ -69,14 +70,17 @@ def extract_song_ids(tracks_list):
     return song_id_list
 
 def get_spotify_client():
-    sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=os.environ['SPOTIFY_CLIENT_ID'],
-                                                            client_secret=os.environ['SPOTIFY_CLIENT_SECRET'],
-                                                            redirect_uri="http://example.com",
+    sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=settings.SPOTIFY_CLIENT_ID,
+                                                            client_secret=settings.SPOTIFY_CLIENT_SECRET,
+                                                            redirect_uri='http://localhost:8888/callback',
+                                                            cache_path='.cache-aakash',
+                                                            username=settings.SPOTIFY_USERNAME,
                                                             scope="user-top-read"))
+                                                            
     return sp                                                       
 
 
-def main():   
+def main():
     sp = get_spotify_client()
     # Getting user's top tracks and audio features based on those tracks
     user_top_tracks = sp.current_user_top_tracks(limit=TOP_TRACKS_TO_CONSIDER_COUNT, time_range=TIME_RANGE)
@@ -84,7 +88,7 @@ def main():
     user_avg_audio_features = dictionary_average(sp.audio_features(tracks = user_top_tracks_ids))
     
     # Getting user's top artists to get a list of genres that the user prefers
-    user_top_artists = sp.current_user_top_artists(limit=TOP_ARTISTS_TO_CONSIDER_COUNT, time_range='long_term')
+    user_top_artists = sp.current_user_top_artists(limit=TOP_ARTISTS_TO_CONSIDER_COUNT, time_range=TIME_RANGE)
     user_top_genres = set()
     for idx, artist in enumerate(user_top_artists['items']):
         this_artist_genres = artist['genres']
@@ -127,7 +131,7 @@ def main():
             max_song_index = idx
     for idx, item in enumerate(eligible_songs):
         if item['id'] == eligible_songs_ids[max_song_index]:
-            message = 'Song of the day: {song_name}\nLink: {song_link}'.format(song_name=item['name'], song_link=item['spotify_url'])
+            message = 'Recommended song: {song_name}\nLink: {song_link}'.format(song_name=item['name'], song_link=item['spotify_url'])
             send_email(message)
             break
 
