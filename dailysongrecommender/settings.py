@@ -22,6 +22,7 @@ EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 SENDER_EMAIL = os.getenv('SENDER_EMAIL')
 SUBSCRIBER_LIST = os.getenv('SUBSCRIBER_LIST')
 SPOTIFY_USERNAME = os.getenv('SPOTIFY_USERNAME')
+CRON_LOG_PATH = os.getenv('CRON_LOG_PATH')
 
 
 
@@ -82,8 +83,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'dailysongrecommender.wsgi.application'
 
 CRONJOBS = [
-    #Cron job that will run every hour
-    ('* */1 * * *', 'recommender.cron.cron_job', '>> ./cron-logs.log')
+    ('*/2 * * * *', 'recommender.cron.cron_job', '>> ' + os.path.dirname(os.path.realpath(__file__)) + '/cron-logs-123.log')
 ]
 
 CRONTAB_COMMAND_SUFFIX = '2>&1'
