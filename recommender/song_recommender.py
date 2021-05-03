@@ -4,6 +4,7 @@ from spotipy.oauth2 import SpotifyOAuth
 from math import sqrt
 from .email_service import send_email
 from django.conf import settings
+import logging
 
 DESIRED_AUDIO_FEATURES = ['danceability', 'energy', 'loudness', 'speechiness', 'acousticness', 'instrumentalness', 'liveness',
                           'valence', 'tempo']
@@ -72,17 +73,15 @@ def extract_song_ids(tracks_list):
 def get_spotify_client():
     sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=settings.SPOTIFY_CLIENT_ID,
                                                             client_secret=settings.SPOTIFY_CLIENT_SECRET,
-                                                            redirect_uri='http://localhost:8888/callback',
-                                                            cache_path='.cache-aakash',
-                                                            username=settings.SPOTIFY_USERNAME,
-                                                            scope="user-top-read"))
-                                                            
-    return sp                                                       
+                                                            redirect_uri='http://0.0.0.0:9000/callback',
+                                                            scope="user-top-read",
+                                                            cache_path='.cache-spotipy',
+                                                            open_browser=False))                                                  
 
+    return sp
 
 def main():
     sp = get_spotify_client()
-    # Getting user's top tracks and audio features based on those tracks
     user_top_tracks = sp.current_user_top_tracks(limit=TOP_TRACKS_TO_CONSIDER_COUNT, time_range=TIME_RANGE)
     user_top_tracks_ids = extract_song_ids(user_top_tracks)
     user_avg_audio_features = dictionary_average(sp.audio_features(tracks = user_top_tracks_ids))

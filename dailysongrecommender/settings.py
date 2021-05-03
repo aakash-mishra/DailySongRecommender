@@ -83,7 +83,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'dailysongrecommender.wsgi.application'
 
 CRONJOBS = [
-    ('*/2 * * * *', 'recommender.cron.cron_job', '>> ' + os.path.dirname(os.path.realpath(__file__)) + '/cron-logs-123.log')
+    ('* */1 * * *', 'recommender.cron.cron_job', '>> ' + os.path.dirname(os.path.realpath(__file__)) + '/cron-logs.log')
 ]
 
 CRONTAB_COMMAND_SUFFIX = '2>&1'
