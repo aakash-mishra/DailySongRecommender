@@ -1,0 +1,15 @@
+[project]
+name = "dailysongrecommender"
+version = "0.1.0"
+description = "AI-powered daily song discovery using Claude agents and Spotify MCP"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "anthropic>=0.83.0",
+    "apscheduler>=3.11.2",
+    "click>=8.3.1",
+    "mcp[cli]>=1.26.0",
+    "python-dotenv>=1.2.1",
+    "rich>=14.3.3",
+    "spotipy>=2.25.2",
+]
