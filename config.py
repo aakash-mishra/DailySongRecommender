@@ -22,7 +22,7 @@ SCHEDULE_HOUR = int(os.getenv("SCHEDULE_HOUR", "9"))
 SCHEDULE_MINUTE = int(os.getenv("SCHEDULE_MINUTE", "0"))
 
 if __name__ == "__main__":
-    print("Config loaded successfully.")
+    # print("Config loaded successfully.")
     print(f"  Spotify client ID: {SPOTIFY_CLIENT_ID[:8]}...")
     print(f"  Anthropic API key: {ANTHROPIC_API_KEY[:8]}...")
     print(f"  Sender email: {SENDER_EMAIL}")
