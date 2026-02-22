@@ -98,28 +98,11 @@ async def build_profile(max_liked_songs: int = 2000) -> dict:
             comfort_zone_genres = [g for g, _ in genre_counter.most_common(5)]
 
             # ------------------------------------------------------------------
-            # 3. Average audio features (sample first 200 liked songs)
+            # 3. Audio features (deprecated endpoint — skipped)
             # ------------------------------------------------------------------
-            sample_ids = all_liked_ids[:200]
-            all_features: list[dict] = []
-
-            for i in range(0, len(sample_ids), 100):
-                chunk = sample_ids[i : i + 100]
-                feat_result = await session.call_tool(
-                    "get_audio_features", {"track_ids": chunk}
-                )
-                feat_data = json.loads(feat_result.content[0].text)
-                all_features.extend(feat_data["features"])
-
-            feature_keys = [
-                "danceability", "energy", "loudness", "speechiness",
-                "acousticness", "instrumentalness", "liveness", "valence", "tempo",
-            ]
+            # NOTE: Spotify deprecated the audio-features endpoint in Nov 2024.
+            # It's no longer available for new applications. Skipping this analysis.
             avg_features: dict[str, float] = {}
-            if all_features:
-                for key in feature_keys:
-                    vals = [f[key] for f in all_features if key in f]
-                    avg_features[key] = round(sum(vals) / len(vals), 4) if vals else 0.0
 
             return {
                 "liked_song_ids": all_liked_ids,   # list; caller can convert to set

@@ -89,37 +89,6 @@ def get_top_artists(limit: int = 50, time_range: str = "long_term") -> str:
 
 
 @mcp.tool()
-def get_audio_features(track_ids: list) -> str:
-    """Get audio features for up to 100 tracks in one call.
-
-    Features: danceability, energy, loudness, speechiness, acousticness,
-    instrumentalness, liveness, valence (all 0.0–1.0), and tempo (BPM).
-    Loudness is in dB (typically –60 to 0).
-
-    Args:
-        track_ids: List of Spotify track IDs (max 100 per call).
-    """
-    features = sp.audio_features(tracks=track_ids[:100])
-    result = []
-    for f in features:
-        if f is None:
-            continue
-        result.append({
-            "id": f["id"],
-            "danceability": f["danceability"],
-            "energy": f["energy"],
-            "loudness": f["loudness"],
-            "speechiness": f["speechiness"],
-            "acousticness": f["acousticness"],
-            "instrumentalness": f["instrumentalness"],
-            "liveness": f["liveness"],
-            "valence": f["valence"],
-            "tempo": f["tempo"],
-        })
-    return json.dumps({"features": result})
-
-
-@mcp.tool()
 def search_tracks(query: str, limit: int = 20) -> str:
     """Search Spotify for tracks by genre, artist, keyword, or any combination.
 

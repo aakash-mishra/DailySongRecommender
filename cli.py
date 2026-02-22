@@ -40,6 +40,10 @@ def cli(verbose: bool):
 def recommend(dry_run: bool):
     """Run the full recommendation pipeline."""
     from agents.orchestrator import run_pipeline
+    from core.spotify_auth import ensure_spotify_auth
+
+    # Ensure Spotify authentication is available before starting MCP servers
+    ensure_spotify_auth()
 
     if dry_run:
         rprint("[yellow]Dry-run mode: Claude will run but no email will be sent "
@@ -101,6 +105,10 @@ def history(limit: int):
 def profile(max_songs: int):
     """Display your current Spotify music taste profile."""
     from agents.profiler import build_profile
+    from core.spotify_auth import ensure_spotify_auth
+
+    # Ensure Spotify authentication is available before starting MCP servers
+    ensure_spotify_auth()
 
     with console.status("[bold green]Fetching your profile from Spotify…"):
         p = asyncio.run(build_profile(max_liked_songs=max_songs))
@@ -131,6 +139,11 @@ def profile(max_songs: int):
 def schedule(hour: int, minute: int):
     """Start the APScheduler daily recommendation scheduler."""
     from scheduler import start_scheduler
+    from core.spotify_auth import ensure_spotify_auth
+
+    # Ensure Spotify authentication is available before starting scheduler
+    ensure_spotify_auth()
+
     start_scheduler(hour=hour, minute=minute)
 
 
