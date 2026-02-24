@@ -1,7 +1,8 @@
 """
 Daily scheduler using APScheduler.
 
-Triggered via: uv run python cli.py schedule [--hour H] [--minute M]
+Runs the recommendation pipeline at specified times each day.
+Triggered via: uv run python cli.py schedule
 """
 import asyncio
 import logging
@@ -18,30 +19,42 @@ def _run_pipeline_sync():
     try:
         result = asyncio.run(run_pipeline(dry_run=False))
         log.info(
-            f"Daily recommendation complete: "
+            f"Recommendation complete: "
             f"'{result['track_name']}' by {result['artist']}"
         )
     except Exception as exc:
         log.error(f"Pipeline failed: {exc}", exc_info=True)
 
 
-def start_scheduler(hour: int = 9, minute: int = 0):
+def start_scheduler(schedule_times: list[tuple[int, int]] = None):
     """Start the blocking daily scheduler.
 
-    Runs _run_pipeline_sync once per day at the specified time.
+    Runs the pipeline at specified times each day.
+
+    Args:
+        schedule_times: List of (hour, minute) tuples in 24h format.
+                       Defaults to [(9, 0), (17, 0)] for 9 AM and 5 PM.
+
     Press Ctrl+C to stop.
     """
-    scheduler = BlockingScheduler()
-    scheduler.add_job(
-        _run_pipeline_sync,
-        trigger="cron",
-        hour=hour,
-        minute=minute,
-        id="daily_recommendation",
-        misfire_grace_time=3600,   # allow up to 1h late if machine was asleep
-    )
+    if schedule_times is None:
+        # Default: 9 AM EST and 5 PM EST
+        schedule_times = [(9, 0), (21, 30)]
 
-    log.info(f"Scheduler started. Pipeline will run daily at {hour:02d}:{minute:02d}.")
+    scheduler = BlockingScheduler()
+
+    for idx, (hour, minute) in enumerate(schedule_times):
+        scheduler.add_job(
+            _run_pipeline_sync,
+            trigger="cron",
+            hour=hour,
+            minute=minute,
+            id=f"recommendation_{idx}",
+            misfire_grace_time=3600,   # allow up to 1h late if machine was asleep
+        )
+        log.info(f"  • Daily at {hour:02d}:{minute:02d}")
+
+    log.info(f"Scheduler started with {len(schedule_times)} daily job(s).")
     log.info("Press Ctrl+C to stop.")
 
     try:

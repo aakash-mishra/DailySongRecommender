@@ -5,7 +5,7 @@ Commands:
   recommend   Run the full pipeline (optionally dry-run)
   history     Show past recommendations
   profile     Display your Spotify taste profile
-  schedule    Start the daily scheduler
+  schedule    Start the daily scheduler (9 AM and 5 PM EST)
 """
 import asyncio
 import logging
@@ -132,19 +132,15 @@ def profile(max_songs: int):
 
 
 @cli.command()
-@click.option("--hour", default=9, show_default=True,
-              help="Hour to run the recommendation (24h format).")
-@click.option("--minute", default=0, show_default=True,
-              help="Minute past the hour to run.")
-def schedule(hour: int, minute: int):
-    """Start the APScheduler daily recommendation scheduler."""
+def schedule():
+    """Start the daily recommendation scheduler (9 AM and 5 PM EST)."""
     from scheduler import start_scheduler
     from core.spotify_auth import ensure_spotify_auth
 
     # Ensure Spotify authentication is available before starting scheduler
     ensure_spotify_auth()
 
-    start_scheduler(hour=hour, minute=minute)
+    start_scheduler()
 
 
 if __name__ == "__main__":

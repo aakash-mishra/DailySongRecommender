@@ -166,7 +166,7 @@ with the exact keys specified."""
                 log.info(f"Agent iteration {iteration + 1}/{max_iterations}")
 
                 response = client.messages.create(
-                    model="claude-sonnet-4-6",
+                    model="claude-haiku-4-5-20251001",
                     max_tokens=4096,
                     system=SYSTEM_PROMPT,
                     tools=anthropic_tools,
@@ -186,7 +186,8 @@ with the exact keys specified."""
                             if start >= 0 and end > start:
                                 try:
                                     rec = json.loads(text[start:end])
-                                except json.JSONDecodeError:
+                                except json.JSONDecodeError as e:
+                                    log.error(f"Failed to parse JSON: {e}. Text: {text[start:end]}")
                                     continue
 
                                 # Final dedup check against DB history
@@ -203,17 +204,20 @@ with the exact keys specified."""
 
                                 required = {"track_id", "track_name", "artist",
                                             "spotify_url", "genre", "explanation"}
+                                missing = required - set(rec.keys())
+                                if missing:
+                                    log.warning(f"Incomplete recommendation; missing fields: {missing}. Got: {rec}")
                                 if required.issubset(rec.keys()):
                                     return rec
 
+                    log.error(f"Agent finished without valid JSON. Claude's last response: {response.content}")
                     raise RuntimeError("Agent finished but produced no valid recommendation JSON.")
 
                 # ---- Case 2: Claude wants to call tools ----
                 elif response.stop_reason == "tool_use":
                     tool_results = []
-                    for block in response.content:
-                        if block.type != "tool_use":
-                            continue
+                    tool_calls = [b for b in response.content if b.type == "tool_use"]
+                    for tool_idx, block in enumerate(tool_calls):
                         log.info(f"  Tool call: {block.name}({list(block.input.keys())})")
                         try:
                             mcp_result = await session.call_tool(block.name, block.input)
@@ -227,6 +231,10 @@ with the exact keys specified."""
                             "tool_use_id": block.id,
                             "content": content,
                         })
+
+                        # Rate limit: add 0.5s delay between Spotify API calls
+                        if tool_idx < len(tool_calls) - 1:
+                            await asyncio.sleep(0.5)
 
                     # All results for one Claude turn → one user message
                     messages.append({"role": "user", "content": tool_results})
