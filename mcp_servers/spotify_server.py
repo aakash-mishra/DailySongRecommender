@@ -140,6 +140,7 @@ def get_recommendations(
         target_energy: Desired energy level 0.0–1.0 (optional).
         target_valence: Desired mood/positivity 0.0–1.0 (optional).
     """
+    log.info(f"get_recommendations called with seed_genres: {seed_genres}")
     kwargs: dict = {"limit": min(limit, 100)}
     if seed_genres:
         kwargs["seed_genres"] = seed_genres[:5]

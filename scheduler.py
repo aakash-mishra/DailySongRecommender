@@ -39,7 +39,7 @@ def start_scheduler(schedule_times: list[tuple[int, int]] = None):
     """
     if schedule_times is None:
         # Default: 9 AM EST and 5 PM EST
-        schedule_times = [(9, 0), (21, 30)]
+        schedule_times = [(9, 0), (17, 0)]
 
     scheduler = BlockingScheduler()
 
