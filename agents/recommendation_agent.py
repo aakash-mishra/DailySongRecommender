@@ -49,18 +49,16 @@ STRATEGY:
    - ADJACENT recommendations: Styles that blend their known genres or sit at the
      intersection (e.g., blues-rock, indie-rock, jazz fusion, alt-country)
    - EXPLORATION recommendations: Related genres they might enjoy (e.g., if they like
-     rock, try folk-rock or psychedelic rock; if they like blues, try soul or R&B)
+     rock, try folk-rock or psychedelic rock; if they like blues, try soul or R&B).
 
    Key genres to consider for this user:
    - Rock and its adjacent styles: rock, indie-rock, alternative, punk, post-rock
    - Blues and blues-adjacent: blues, soul, r-b, roots, country-blues
    - Jazz and jazz-adjacent: jazz, jazz-fusion, acid-jazz, smooth-jazz, bebop
-   - Indie and indie-adjacent: indie-pop, indie-rock, lo-fi, alternative, indie-folk
 
    CRITICAL: Use ONLY valid Spotify genre slugs with hyphens, lowercase, no spaces.
-   Examples: 'indie-rock' ✓, 'psychedelic-rock' ✓, 'blues-rock' ✓
+   Examples: 'psychedelic-rock' ✓, 'blues-rock' ✓
    WRONG: 'Indie Rock' ✗, 'indie rock' ✗, 'psychedelic rock' ✗
-   Feel free to include some Hindi indie songs occasionally.
 
 3. Call get_recommendations with multiple diverse genre seeds. ALWAYS provide at least
    one seed (genres, artists, or tracks). Mix genres from the identified angles to create
@@ -183,6 +181,7 @@ with the exact keys specified."""
 
                 response = client.messages.create(
                     model="claude-haiku-4-5-20251001",
+                    # model="claude-sonnet-4-5",
                     max_tokens=4096,
                     system=SYSTEM_PROMPT,
                     tools=anthropic_tools,

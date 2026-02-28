@@ -51,9 +51,10 @@ async def build_profile(max_liked_songs: int = 2000) -> dict:
             log.info("Spotify MCP session ready.")
 
             # ------------------------------------------------------------------
-            # 1. Collect liked songs (paginated)
+            # 1. Collect liked songs (paginated) + artist IDs
             # ------------------------------------------------------------------
             all_liked_ids: list[str] = []
+            artist_ids: list[str] = []
             offset = 0
             page_size = 50
             total_on_spotify: int | None = None
@@ -74,18 +75,22 @@ async def build_profile(max_liked_songs: int = 2000) -> dict:
 
                 for t in tracks:
                     all_liked_ids.append(t["id"])
+                    artist_ids.append(t["artist_id"])
 
                 offset += page_size
                 if offset >= min(max_liked_songs, total_on_spotify):
                     break
 
-            log.info(f"Fetched {len(all_liked_ids)} liked song IDs.")
+            log.info(f"Fetched {len(all_liked_ids)} liked song IDs from {len(set(artist_ids))} unique artists.")
 
             # ------------------------------------------------------------------
-            # 2. Top artists → genre distribution
+            # 2. Fetch artist data from liked songs → genre distribution
             # ------------------------------------------------------------------
+            # Remove duplicates while preserving order for batching efficiency
+            unique_artist_ids = list(dict.fromkeys(artist_ids))
+
             artists_result = await session.call_tool(
-                "get_top_artists", {"limit": 50, "time_range": "long_term"}
+                "get_artists", {"artist_ids": unique_artist_ids}
             )
             artists_data = json.loads(artists_result.content[0].text)
 

@@ -89,6 +89,32 @@ def get_top_artists(limit: int = 50, time_range: str = "long_term") -> str:
 
 
 @mcp.tool()
+def get_artists(artist_ids: list) -> str:
+    """Fetch artist information by ID (genres, name, popularity).
+
+    Useful for building genre distribution from liked songs.
+    Spotify API allows up to 50 artists per request; this tool handles batching.
+
+    Args:
+        artist_ids: List of Spotify artist IDs (max 50 per call).
+    """
+    # Batch fetch in groups of 50 (Spotify API limit)
+    artists = []
+    for i in range(0, len(artist_ids), 50):
+        batch = artist_ids[i:i+50]
+        result = sp.artists(batch)
+        for artist in result["artists"]:
+            if artist:  # Skip None entries
+                artists.append({
+                    "id": artist["id"],
+                    "name": artist["name"],
+                    "genres": artist["genres"],
+                    "popularity": artist["popularity"],
+                })
+    return json.dumps({"artists": artists})
+
+
+@mcp.tool()
 def search_tracks(query: str, limit: int = 20) -> str:
     """Search Spotify for tracks by genre, artist, keyword, or any combination.
 
