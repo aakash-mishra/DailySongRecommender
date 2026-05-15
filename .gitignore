@@ -77,3 +77,6 @@ dmypy.json
 
 # Mac specific
 .DS_Store
+
+# UV
+uv.lock
