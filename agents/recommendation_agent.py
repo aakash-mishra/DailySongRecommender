@@ -4,11 +4,10 @@ Recommendation Agent
 Claude-powered agent that finds one novel, risky-but-rewarding song
 recommendation tailored to the user's specific taste profile.
 
-Key concepts demonstrated here:
-  1. MCP client ↔ server communication over stdio
-  2. Anthropic tool-use agent loop (the core agentic pattern)
-  3. Converting MCP tool schemas to Anthropic tool format
-  4. Handling parallel tool calls in a single conversation turn
+Uses the Claude Agent SDK, which spawns the local `claude` CLI and
+authenticates against the user's Pro / Max subscription (no API key).
+The SDK runs the tool-use loop internally — we just configure the MCP
+server, pass the prompt, and read the final assistant message.
 """
 import asyncio
 import json
@@ -20,14 +19,33 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 log = logging.getLogger(__name__)
 
-import anthropic
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeAgentOptions,
+    ClaudeSDKClient,
+    ResultMessage,
+    TextBlock,
+    ToolUseBlock,
+)
 from core.database import was_recommended
-from config import ANTHROPIC_API_KEY
 
 SPOTIFY_SERVER = os.path.join(os.path.dirname(os.path.dirname(__file__)),
                               "mcp_servers", "spotify_server.py")
+
+MODEL = "claude-sonnet-4-6"
+MAX_TURNS = 10
+MAX_DEDUP_RETRIES = 3
+
+# Tools the agent is allowed to call. The SDK exposes MCP tools to Claude as
+# `mcp__<server-name>__<tool-name>`; the server name below ("spotify") must
+# match the key in ClaudeAgentOptions.mcp_servers.
+ALLOWED_TOOLS = [
+    "mcp__spotify__get_liked_songs",
+    "mcp__spotify__get_top_artists",
+    "mcp__spotify__get_artists",
+    "mcp__spotify__search_tracks",
+    "mcp__spotify__get_recommendations",
+]
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -87,60 +105,18 @@ comfort zone but are new to them, or because they offer a satisfying musical bri
 to something adjacent they might already appreciate.
 """
 
+REQUIRED_KEYS = {"track_id", "track_name", "artist",
+                 "spotify_url", "genre", "explanation"}
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _mcp_tools_to_anthropic(mcp_tools) -> list[dict]:
-    """Convert MCP ListToolsResult to Anthropic tools format.
-
-    Both formats use JSON Schema, but the top-level key name differs:
-      MCP:      tool.inputSchema
-      Anthropic: tool["input_schema"]
-    """
-    result = []
-    for tool in mcp_tools:
-        schema = tool.inputSchema if tool.inputSchema else {
-            "type": "object", "properties": {}, "required": []
-        }
-        result.append({
-            "name": tool.name,
-            "description": tool.description or f"Call {tool.name}",
-            "input_schema": schema,
-        })
-    return result
-
-
-# ---------------------------------------------------------------------------
-# Main agent
-# ---------------------------------------------------------------------------
-
-async def find_novel_recommendation(profile: dict) -> dict:
-    """Run the Claude tool-use loop to find a novel song recommendation.
-
-    Returns a dict with keys: track_id, track_name, artist, spotify_url,
-    genre, explanation.
-    """
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
-    server_params = StdioServerParameters(
-        command="uv",
-        args=["run", "python", SPOTIFY_SERVER],
-    )
-
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            await asyncio.wait_for(session.initialize(), timeout=30)
-
-            # Convert MCP tools to Anthropic format
-            tools_list = await session.list_tools()
-            anthropic_tools = _mcp_tools_to_anthropic(tools_list.tools)
-
-            # Build the initial prompt — include profile + IDs to exclude
-            # Limit to 500 IDs to keep the context window manageable
-            excluded_ids = profile["liked_song_ids"][:500]
-
-            user_message = f"""\
+def _build_user_prompt(profile: dict) -> str:
+    """Render the initial user message from the taste profile."""
+    excluded_ids = profile["liked_song_ids"][:500]
+    return f"""\
 Here is the user's music taste profile:
 
 COMFORT ZONE GENRES (most frequent, use these along with some risky, non-comfort zone genres as seed):
@@ -167,107 +143,105 @@ Find me one novel, risky-but-rewarding song recommendation following the
 strategy in your system prompt. Return your final answer as a JSON object
 with the exact keys specified."""
 
-            messages = [{"role": "user", "content": user_message}]
 
-            # ------------------------------------------------------------------
-            # Agent loop
-            # Each iteration: Claude responds → we execute any tool calls →
-            # we return all tool results in a single user message → repeat.
-            # Loop ends when stop_reason == "end_turn".
-            # ------------------------------------------------------------------
-            max_iterations = 10
-            for iteration in range(max_iterations):
-                log.info(f"Agent iteration {iteration + 1}/{max_iterations}")
+def _extract_json_from_text(text: str) -> dict | None:
+    """Pull the first {...} JSON object out of Claude's final text reply."""
+    start = text.find("{")
+    end = text.rfind("}") + 1
+    if start < 0 or end <= start:
+        return None
+    try:
+        return json.loads(text[start:end])
+    except json.JSONDecodeError as e:
+        log.error(f"Failed to parse JSON: {e}. Text: {text[start:end]}")
+        return None
 
-                response = client.messages.create(
-                    model="claude-haiku-4-5-20251001",
-                    # model="claude-sonnet-4-5",
-                    max_tokens=4096,
-                    system=SYSTEM_PROMPT,
-                    tools=anthropic_tools,
-                    messages=messages,
-                )
 
-                # Append Claude's full response to conversation history
-                messages.append({"role": "assistant", "content": response.content})
+async def _collect_final_text(client: ClaudeSDKClient) -> str:
+    """Drain one response from the SDK, returning Claude's final text reply.
 
-                # ---- Case 1: Claude is done ----
-                if response.stop_reason == "end_turn":
-                    for block in response.content:
-                        if hasattr(block, "text") and block.text:
-                            text = block.text
-                            start = text.find("{")
-                            end = text.rfind("}") + 1
-                            if start >= 0 and end > start:
-                                try:
-                                    rec = json.loads(text[start:end])
-                                except json.JSONDecodeError as e:
-                                    log.error(f"Failed to parse JSON: {e}. Text: {text[start:end]}")
-                                    continue
+    Logs each turn and each tool call so a slow run shows progress.
+    """
+    final_text_parts: list[str] = []
+    turn = 0
+    async for msg in client.receive_response():
+        if isinstance(msg, AssistantMessage):
+            turn += 1
+            for b in msg.content:
+                if isinstance(b, ToolUseBlock):
+                    log.info(f"  turn {turn} tool call: {b.name}({list(b.input.keys())})")
+            text_in_this_turn = [
+                b.text for b in msg.content
+                if isinstance(b, TextBlock) and b.text
+            ]
+            if text_in_this_turn:
+                final_text_parts = text_in_this_turn
+        elif isinstance(msg, ResultMessage):
+            log.info(f"Agent finished in {turn} turn(s)")
+            break
+    return "\n".join(final_text_parts)
 
-                                # Final dedup check against DB history
-                                if was_recommended(rec.get("track_id", "")):
-                                    log.info(f"Track {rec['track_id']} already in history; asking Claude to retry.")
-                                    messages.append({
-                                        "role": "user",
-                                        "content": (
-                                            f"Track {rec['track_id']} was already recommended "
-                                            "previously. Please find a different one."
-                                        ),
-                                    })
-                                    continue
 
-                                required = {"track_id", "track_name", "artist",
-                                            "spotify_url", "genre", "explanation"}
-                                missing = required - set(rec.keys())
-                                if missing:
-                                    log.warning(f"Incomplete recommendation; missing fields: {missing}. Got: {rec}")
-                                if required.issubset(rec.keys()):
-                                    return rec
+# ---------------------------------------------------------------------------
+# Main agent
+# ---------------------------------------------------------------------------
 
-                    log.error(f"Agent finished without valid JSON. Claude's last response: {response.content}")
-                    raise RuntimeError("Agent finished but produced no valid recommendation JSON.")
+async def find_novel_recommendation(profile: dict) -> dict:
+    """Run the Claude tool-use loop to find a novel song recommendation.
 
-                # ---- Case 2: Claude wants to call tools ----
-                elif response.stop_reason == "tool_use":
-                    tool_results = []
-                    tool_calls = [b for b in response.content if b.type == "tool_use"]
-                    for tool_idx, block in enumerate(tool_calls):
-                        log.info(f"  Tool call: {block.name}({list(block.input.keys())})")
-                        try:
-                            mcp_result = await session.call_tool(block.name, block.input)
-                            content = (mcp_result.content[0].text
-                                       if mcp_result.content else "{}")
-                        except Exception as exc:
-                            content = json.dumps({"error": str(exc)})
+    Returns a dict with keys: track_id, track_name, artist, spotify_url,
+    genre, explanation.
+    """
+    options = ClaudeAgentOptions(
+        model=MODEL,
+        system_prompt=SYSTEM_PROMPT,
+        mcp_servers={
+            "spotify": {
+                "type": "stdio",
+                "command": "uv",
+                "args": ["run", "python", SPOTIFY_SERVER],
+            },
+        },
+        allowed_tools=ALLOWED_TOOLS,
+        max_turns=MAX_TURNS,
+        permission_mode="bypassPermissions",
+    )
 
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": content,
-                        })
+    async with ClaudeSDKClient(options=options) as client:
+        await client.query(_build_user_prompt(profile))
 
-                        # Rate limit: add 0.5s delay between Spotify API calls
-                        if tool_idx < len(tool_calls) - 1:
-                            await asyncio.sleep(0.5)
+        for attempt in range(MAX_DEDUP_RETRIES + 1):
+            log.info(f"Awaiting recommendation (attempt {attempt + 1}/{MAX_DEDUP_RETRIES + 1})")
+            text = await _collect_final_text(client)
+            rec = _extract_json_from_text(text)
 
-                    # All results for one Claude turn → one user message
-                    messages.append({"role": "user", "content": tool_results})
+            if rec is None:
+                log.error(f"Agent finished without valid JSON. Last text: {text!r}")
+                raise RuntimeError("Agent finished but produced no valid recommendation JSON.")
 
-                else:
-                    raise RuntimeError(
-                        f"Unexpected stop_reason: {response.stop_reason}"
-                    )
+            missing = REQUIRED_KEYS - set(rec.keys())
+            if missing:
+                log.warning(f"Incomplete recommendation; missing fields: {missing}. Got: {rec}")
+                raise RuntimeError(f"Recommendation missing required fields: {missing}")
+
+            if not was_recommended(rec["track_id"]):
+                return rec
+
+            log.info(f"Track {rec['track_id']} already in history; asking Claude to retry.")
+            await client.query(
+                f"Track {rec['track_id']} was already recommended previously. "
+                "Please find a different one and return the same JSON shape."
+            )
 
     raise RuntimeError(
-        f"Agent did not converge after {max_iterations} iterations."
+        f"Agent could not produce a novel recommendation after {MAX_DEDUP_RETRIES + 1} attempts."
     )
 
 
 if __name__ == "__main__":
     # Quick smoke-test: load a minimal fake profile and run the agent.
-    # Requires ANTHROPIC_API_KEY and a valid Spotify cache.
-    import asyncio
+    # Requires the `claude` CLI to be logged in (subscription auth) and a
+    # valid Spotify cache.
     from agents.profiler import build_profile
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
